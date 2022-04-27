@@ -1,7 +1,11 @@
-type Promisable<T> = T | PromiseLike<T>;
-
 declare module "slicemachine" {
 	import * as prismicT from "@prismicio/types";
+
+	// ===========================================================================
+	//
+	// Primary types
+	//
+	// ===========================================================================
 
 	export type Plugin<PluginOptions = DefaultPluginOptions> = (
 		context: SliceMachineContext<PluginOptions>,
@@ -12,7 +16,15 @@ declare module "slicemachine" {
 		extends Omit<PluginContext, "data"> {
 		hook(name: "createSlice", fn: CreateSliceHook<PluginOptions>): void;
 		hook(name: "updateSlice", fn: UpdateSliceHook<PluginOptions>): void;
+		hook(name: "removeSlice", fn: RemoveSliceHook<PluginOptions>): void;
+		hook(name: "codeSnippet", fn: CodeSnippetsHook<PluginOptions>): void;
 	}
+
+	// ===========================================================================
+	//
+	// HOOK: createSlice
+	//
+	// ===========================================================================
 
 	export type CreateSliceData = {
 		sliceLibrary: SliceLibrary;
@@ -24,6 +36,12 @@ declare module "slicemachine" {
 		PluginOptions
 	>;
 
+	// ===========================================================================
+	//
+	// HOOK: updateSlice
+	//
+	// ===========================================================================
+
 	export type UpdateSliceData = {
 		sliceLibrary: SliceLibrary;
 		model: prismicT.SharedSliceModel;
@@ -33,6 +51,12 @@ declare module "slicemachine" {
 		UpdateSliceContext,
 		PluginOptions
 	>;
+
+	// ===========================================================================
+	//
+	// HOOK: removeSlice
+	//
+	// ===========================================================================
 
 	export type RemoveSliceData = {
 		sliceLibrary: SliceLibrary;
@@ -44,8 +68,59 @@ declare module "slicemachine" {
 		PluginOptions
 	>;
 
+	// ===========================================================================
+	//
+	// HOOK: codeSnippets
+	//
+	// ===========================================================================
+
+	enum RootModelType {
+		Slice = "Slice",
+		CustomType = "CustomType",
+	}
+	export type CodeSnippetData = {
+		fieldPath: string[];
+		sliceLibrary: SliceLibrary;
+	} & (
+		| {
+				rootModelType: RootModelType.Slice;
+				rootModel: prismicT.SharedSliceModel;
+				model: prismicT.CustomTypeModelFieldForGroup;
+		  }
+		| {
+				rootModelType: RootModelType.CustomType;
+				rootModel: prismicT.CustomTypeModel;
+				model: prismicT.CustomTypeModelField;
+		  }
+	);
+	type CodeSnippetDescriptor = {
+		label: string;
+		language: string;
+		preCode?: string;
+		code: string;
+		postCode?: string;
+	};
+	export type CodeSnippetReturnType = Promisable<
+		CodeSnippetDescriptor | CodeSnippetDescriptor[] | undefined
+	>;
+	export type CodeSnippetContext = PluginContext<CodeSnippetData>;
+	export type CodeSnippetHook<PluginOptions = DefaultPluginOptions> = Hook<
+		CodeSnippetContext,
+		PluginOptions,
+		CodeSnippetReturnType
+	>;
+
+	// ===========================================================================
+	//
+	// General types
+	//
+	// ===========================================================================
+
+	type Promisable<T> = T | PromiseLike<T>;
+
 	type Hook<
-		Context extends PluginContext = PluginContext,
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		Context extends PluginContext<any> = PluginContext,
 		PluginOptions = DefaultPluginOptions,
 		ReturnType = Promisable<void>,
 	> = (context: Context, pluginOptions: PluginOptions) => ReturnType;
@@ -60,34 +135,11 @@ declare module "slicemachine" {
 		actions: Actions;
 		project: Project;
 		logger: Logger;
-		resolvePath: ResolvePath;
 	}
 
 	export interface Actions {
-		fileExists(path: string): Promise<boolean>;
-		writeFile(
-			path: string,
-			contents: string,
-			config?: WriteFileConfig,
-		): Promise<void>;
-		readFile(path: string): Promise<string>;
-		removeFile(path: string): Promise<void>;
-		dirExists(path: string): Promise<boolean>;
-		createDir(path: string, config?: CreateDirConfig): Promise<void>;
-		removeDir(path: string): Promise<void>;
-		readSliceModelFile(path: string): Promise<prismicT.SharedSliceModel>;
-		readCustomTypeModelFile(path: string): Promise<prismicT.CustomTypeModel>;
+		getSliceLibrarySliceIDs(sliceLibraryID: string): Promise<string[]>;
 	}
-
-	type WriteFileConfig = {
-		overwrite?: boolean;
-	};
-
-	type CreateDirConfig = {
-		recursive?: boolean;
-	};
-
-	type ResolvePath = (...pathSegments: string[]) => string;
 
 	export interface Project {
 		rootDir: string;

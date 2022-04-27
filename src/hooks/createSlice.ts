@@ -1,36 +1,35 @@
 import type { CreateSliceHook, CreateSliceContext } from "slicemachine";
 import { generateTypes } from "prismic-ts-codegen";
 import { stripIndent } from "common-tags";
-import semver from "semver";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 import { prettierFormat } from "../lib/prettierFormat";
 import { pascalCase } from "../lib/pascalCase";
 
 import { PluginOptions } from "../types";
+import { buildSliceLibraryIndexFileContents } from "../lib/buildSliceLibraryIndexFileContents";
 
-// TODO: Replace abstracted `fs` function with `fs` directly.
-// Testing can be handled using mock-fs
-
-type CreateFileArgs = {
+type Args = {
 	dir: string;
 	context: CreateSliceContext;
 	pluginOptions: PluginOptions;
 };
 
-const createModelFile = async (args: CreateFileArgs) => {
-	const path = args.context.resolvePath(args.dir, "model.json");
+const createModelFile = async (args: Args) => {
+	const filePath = path.join(args.dir, "model.json");
 
 	let contents = JSON.stringify(args.context.data.model);
 
 	if (args.pluginOptions.prettier) {
-		contents = await prettierFormat(path, contents);
+		contents = await prettierFormat(filePath, contents);
 	}
 
-	args.context.actions.writeFile(path, contents);
+	await fs.writeFile(filePath, contents);
 };
 
-const createComponentFile = async (args: CreateFileArgs) => {
-	const path = args.context.resolvePath(
+const createComponentFile = async (args: Args) => {
+	const filePath = path.join(
 		args.dir,
 		args.pluginOptions.typescript
 			? "index.tsx"
@@ -94,78 +93,45 @@ const createComponentFile = async (args: CreateFileArgs) => {
 	}
 
 	if (args.pluginOptions.prettier) {
-		contents = await prettierFormat(path, contents);
+		contents = await prettierFormat(filePath, contents);
 	}
 
-	args.context.actions.writeFile(path, contents);
+	await fs.writeFile(filePath, contents);
 };
 
-const createTypesFile = async (args: CreateFileArgs) => {
-	const path = args.context.resolvePath(args.dir, "types.ts");
+const createTypesFile = async (args: Args) => {
+	const filePath = path.join(args.dir, "types.ts");
 
 	let contents = generateTypes({
 		sharedSliceModels: [args.context.data.model],
 	});
 
 	if (args.pluginOptions.prettier) {
-		contents = await prettierFormat(path, contents);
+		contents = await prettierFormat(filePath, contents);
 	}
 
-	args.context.actions.writeFile(path, contents);
+	await fs.writeFile(filePath, contents);
 };
 
-const upsertSliceLibraryIndexFile = async (args: CreateFileArgs) => {
-	const path = args.context.resolvePath(
-		args.context.data.sliceLibrary.path,
-		args.pluginOptions.typescript ? "index.ts" : "index.js",
-	);
+const upsertSliceLibraryIndexFile = async (args: Args) => {
+	const { filePath, contents } = await buildSliceLibraryIndexFileContents({
+		sliceLibraryID: args.context.data.sliceLibrary.path,
+		typescript: args.pluginOptions.typescript,
+		prettier: args.pluginOptions.prettier,
+		getSliceLibrarySliceIDs: args.context.actions.getSliceLibrarySliceIDs,
+		projectRootDir: args.context.project.rootDir,
+	});
 
-	const packageJSON = JSON.parse(
-		await args.context.actions.readFile(
-			args.context.resolvePath("package.json"),
-		),
-	);
-	const isReactLazyCompatible =
-		semver.satisfies("18", packageJSON.dependencies.react) &&
-		semver.satisfies("12", packageJSON.dependencies.next);
-
-	let contents: string;
-
-	if (isReactLazyCompatible) {
-		contents = stripIndent`
-			import * as React from 'react'
-
-			export const components = {
-				text: React.lazy(() => import('./Text'))
-			}
-		`;
-	} else {
-		contents = stripIndent`
-			import dynamic from 'next/dynamic'
-
-			export const components = {
-				text: dynamic(() => import('./Text'))
-			}
-		`;
-	}
-
-	if (args.pluginOptions.prettier) {
-		contents = await prettierFormat(path, contents);
-	}
-
-	args.context.actions.writeFile(path, contents);
+	await fs.writeFile(filePath, contents);
 };
 
 export const createSlice: CreateSliceHook<PluginOptions> = async (
 	context,
 	pluginOptions,
 ) => {
-	const dir = context.resolvePath(
-		context.data.sliceLibrary.path,
-		context.data.model.id,
-	);
+	const dir = path.join(context.data.sliceLibrary.path, context.data.model.id);
 
-	await context.actions.createDir(dir);
+	await fs.mkdir(dir, { recursive: true });
 
 	await Promise.allSettled([
 		createModelFile({ dir, context, pluginOptions }),
